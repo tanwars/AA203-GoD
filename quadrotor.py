@@ -74,23 +74,17 @@ class Quadrotor():
         self.state += self.dt * x_dot
         return self.state, x_dot
 
-    def diffFlatStatesInputs(self, sigma_coeffs, t_kf):
+    def diffFlatStatesInputs(self, traj):
         """
         Computes the state and input from differentially flat output
-        sigma_coeffs is shaped (n, m, 4)
-        t_kf is shaped (m,)
         outputs: 
             desired control for each time step dt upto t_kf[-1]
             desired quadrotor state for each time step dt upto t_kf[-1] 
         """
-        sigma = [None] * 4
-        sigma1d = [None] * 4
-        sigma2d = [None] * 4
-        sigma3d = [None] * 4
-        sigma4d = [None] * 4
 
         # find total number of timesteps
-        total_steps = int(np.floor(t_kf[-1]/ self.dt))
+        t_kf = traj.getTkf()
+        total_steps = int(np.floor((t_kf[-1]/ self.dt)))
 
         # initialize x and u and other params
         x_all = np.zeros((self.fidelity,total_steps))
@@ -103,29 +97,19 @@ class Quadrotor():
         for time_step in range(total_steps):
             # find which piece we are in
             t = time_step * self.dt
-            j = np.searchsorted(t_kf,t)
-            
-            # compute derivatives of sigma(t) - can be sped up/optimized 
-            # to be called once per j change
-            for idx in range(4):
-                sigma[idx] = np.poly1d(sigma_coeffs[:,j,idx])
-                sigma1d[idx] = np.polyder(sigma[idx])
-                sigma2d[idx] = np.polyder(sigma1d[idx])
-                sigma3d[idx] = np.polyder(sigma2d[idx])
-                sigma4d[idx] = np.polyder(sigma3d[idx])
 
             # find state
             # find control  
             x = np.zeros((self.fidelity,))
             u = np.zeros((4,))
-            psi = sigma[3](t)
-            psi_dot = sigma1d[3](t)
-            psi_ddot = sigma2d[3](t)
-            sigma_pos = np.array([sigma[0](t), sigma[1](t), sigma[2](t)])
-            sigma_vel = np.array([sigma1d[0](t), sigma1d[1](t), sigma1d[2](t)])
-            sigma_acc = np.array([sigma2d[0](t), sigma2d[1](t), sigma2d[2](t)])
-            sigma_jer = np.array([sigma3d[0](t), sigma3d[1](t), sigma3d[2](t)])
-            sigma_sna = np.array([sigma4d[0](t), sigma4d[1](t), sigma4d[2](t)])
+            psi = (traj.sigma(t))[3]
+            psi_dot = (traj.sigma(t,1))[3]
+            psi_ddot = (traj.sigma(t,2))[3]
+            sigma_pos = (traj.sigma(t))[0:3]
+            sigma_vel = (traj.sigma(t,1))[0:3]
+            sigma_acc = (traj.sigma(t,2))[0:3]
+            sigma_jer = (traj.sigma(t,3))[0:3]
+            sigma_sna = (traj.sigma(t,4))[0:3]
             zw = np.array([0,0,1])
 
             x[0:3] = sigma_pos
@@ -178,3 +162,48 @@ class Quadrotor():
             u_all[:,time_step] = u
 
         return x_all, u_all
+
+    def PDController(self, traj):
+        """
+        looks at the current state and nominal differentially flat path to 
+        compute the control to be applied.
+
+        """
+        x = self.state  # assume perfectly measurable system
+
+class Trajectory():
+    """
+    trajectories to store and access classes.
+    """
+
+    def __init__(self, sigma_coeffs, t_kf):
+        """
+        sigma_coeffs is shaped (n, m, 4)
+        t_kf is shaped (m,)
+        """
+        self.sigma_coeffs = sigma_coeffs
+        self.t_kf = t_kf
+
+    def getTkf(self):
+        return self.t_kf
+
+    def sigma(self, t, order = 0):
+        j = np.searchsorted(self.t_kf,t)
+        sigma_arr = [None] * 4
+        sigma_ret = [None] * 4
+        for idx in range(4):
+            sigma_arr[idx] = np.poly1d(self.sigma_coeffs[:,j,idx])
+            if order != 0:
+                sigma_ret[idx] = np.polyder(sigma_arr[idx], order)
+        
+        if order == 0:
+            return np.array([sigma_arr[0](t), 
+                             sigma_arr[1](t), 
+                             sigma_arr[2](t),
+                             sigma_arr[3](t)])
+        else:
+            return np.array([sigma_ret[0](t), 
+                             sigma_ret[1](t), 
+                             sigma_ret[2](t),
+                             sigma_ret[3](t)])
+    

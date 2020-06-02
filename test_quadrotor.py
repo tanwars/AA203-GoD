@@ -1,4 +1,4 @@
-from quadrotor import Quadrotor
+from quadrotor import Quadrotor, Trajectory
 from mpl_toolkits import mplot3d
 
 import numpy as np
@@ -68,8 +68,8 @@ for num in range(len(t_kf)):
 # plt.show()
 ##################
 
-
-x,u = q.diffFlatStatesInputs(traj,t_kf)
+trajectory = Trajectory(traj, t_kf)
+x,u = q.diffFlatStatesInputs(trajectory)
 
 print('---------------------------')
 
