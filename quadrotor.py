@@ -1,11 +1,12 @@
 import numpy as np
 from scipy.spatial.transform import Rotation as R
+from scipy.integrate import ode
 
 class Quadrotor():
     """
     Quadrotor non-linear model, and states from differentially flat output
     """
-    def __init__(self, m = 1, kf = 1e-5, km = 1e-5, Jx = 1, Jy = 1, Jz = 1, 
+    def __init__(self, m = 1, kf = 1e-5, km = 1e-5, Jx = 1, Jy = 1, Jz = 2, 
                        l = 1, dt = 0.01, fidelity = 12):
         self.m = m
         self.kf = kf
@@ -15,15 +16,20 @@ class Quadrotor():
         self.dt = dt
         self.g = 9.81
         self.fidelity = fidelity
+        self.time = 0
         assert (fidelity == 12 or fidelity == 9), "fidelity should be 12 or 9"
         if fidelity == 12:
             self.state = np.zeros((12,))
         elif fidelity == 9:
             self.state = np.zeros((9,))
+        self.state_dot = np.zeros_like(self.state)
 
     def setState(self, x):
         assert x.size == self.fidelity, "fidelity is different. Cannot set state"
-        self.state = x
+        self.state = x.copy()
+
+    def setSystemTime(self, t):
+        self.time = t
 
     def getState(self):
         """
@@ -31,13 +37,25 @@ class Quadrotor():
         """
         return self.state
 
-    def stepNlDyn(self, u):
+    def EulStepNlDyn(self, u):
         """
         Non-linear model in X config.
         control u is thrust, torques - assumes it in x config.
         outputs state at next time state and derivative at current
         """
-        x = self.state
+        x_dot = self.nlDyn(u, self.state)
+        self.state += self.dt * x_dot
+        self.time += self.dt
+        return self.state, x_dot
+
+    def nlDyn(self, u, x):
+        """
+        Non-linear model in X config.
+        control u is thrust, torques - assumes it in x config.
+        outputs state at next time state and derivative at current
+        """
+
+        self.state = x
         x_dot = np.zeros_like(x)
         g = self.g
         m = self.m
@@ -48,7 +66,7 @@ class Quadrotor():
         psi = x[5]
         omega = x[9:12]
 
-        x_dot[0:3] = x[6:9]
+        x_dot[0:3] = x[6:9].copy()
         
         r1 = np.array([ [1,0,0],
                         [0,np.cos(phi),-np.sin(phi)],
@@ -60,10 +78,16 @@ class Quadrotor():
                         [np.sin(psi),np.cos(psi),0],
                         [0,0,1]])
 
-        col1 = np.reshape(r2[:,0],(3,1))
-        col2 = np.reshape(np.array([0,1,0]),(3,1))
-        col3 = np.reshape((r2 @ r1)[:,2],(3,1))
-        Tau = np.hstack((col1,col2,col3))
+        # col1 = np.reshape(np.transpose(r2)[:,0],(3,1))
+        # col2 = np.reshape(np.array([0,1,0]),(3,1))
+        # col3 = np.reshape(np.transpose((r2 @ r1))[:,2],(3,1))
+        # Tau = np.hstack((col1,col2,col3))
+        Tau = np.array([[np.cos(theta), 0, -np.sin(theta)],
+                        [0, 1, np.sin(phi) * np.cos(theta)],
+                        [np.sin(theta), 0, np.cos(phi) * np.cos(theta)]])
+        # Tau = np.array([[np.cos(theta), 0, -np.cos(phi)*np.sin(theta)],
+        #                 [0,1, np.sin(phi)],
+        #                 [np.sin(theta), 0, np.cos(phi) * np.cos(theta)]])
         x_dot[3:6] = np.linalg.inv(Tau) @ omega
 
         rot_arr = r3 @ r1 @ r2 @ np.array([0,0,1])
@@ -71,8 +95,8 @@ class Quadrotor():
 
         x_dot[9:12] = np.linalg.inv(J) @ (u[1:4] - np.cross(omega, J @ omega))
 
-        self.state += self.dt * x_dot
-        return self.state, x_dot
+        self.state_dot = x_dot.copy()
+        return x_dot
 
     def diffFlatStatesInputs(self, traj):
         """
@@ -98,8 +122,7 @@ class Quadrotor():
             # find which piece we are in
             t = time_step * self.dt
 
-            # find state
-            # find control  
+            # find state and control
             x = np.zeros((self.fidelity,))
             u = np.zeros((4,))
             psi = (traj.sigma(t))[3]
@@ -138,7 +161,8 @@ class Quadrotor():
             x[10] = np.dot(h_omega, xn)
             x[11] = psi_dot * np.dot(zw, zn)
 
-            omega_nw = x[9] * xn + x[10] * yn + x[11] * zn
+            # omega_nw = x[9] * xn + x[10] * yn + x[11] * zn
+            omega_nw = np.array([x[9],x[10],x[11]])
 
             u1_dot = - mass * np.dot(sigma_jer, zn)
             u1_ddot = -np.dot(
@@ -153,8 +177,10 @@ class Quadrotor():
             alpha1 = - np.dot(h_alpha, yn)
             alpha2 = np.dot(h_alpha, xn)
             alpha3 = np.dot((psi_ddot * zn - psi_dot * h_omega), zw)
-            omega_dot_nw = alpha1 * xn + alpha2 * yn + alpha3 * zn
-
+            # omega_dot_nw = alpha1 * xn + alpha2 * yn + alpha3 * zn
+            omega_dot_nw = np.array([alpha1,alpha2,alpha3])
+            
+            # possibly minus sign
             u_vec = J @ omega_dot_nw + np.cross(omega_nw, J @ omega_nw)
             u[1:4] = u_vec
 
@@ -163,13 +189,230 @@ class Quadrotor():
 
         return x_all, u_all
 
+    def setStateAtNomTime(self, traj, t):
+        
+        psi_t = traj.sigma(t)[3]
+        psi_dot_t = traj.sigma(t,1)[3]
+        pos_t = traj.sigma(t)[0:3]
+        vel_t = traj.sigma(t,1)[0:3]
+        acc_t = traj.sigma(t,2)[0:3]
+        jer_t = traj.sigma(t,3)[0:3]
+        mass = self.m
+        g = self.g
+
+        zw = np.array([0,0,1])
+
+        self.state[0:3] = pos_t.copy()
+        self.state[6:9] = vel_t.copy()
+        self.state[5] = psi_t
+
+        Fn = mass * acc_t - mass * g * zw
+        # u0_ff = np.linalg.norm(Fn)
+        u0_ff = - np.dot(zw, Fn)
+
+        zn = - Fn / np.linalg.norm(Fn)
+        ys = np.array([-np.sin(psi_t), np.cos(psi_t), 0])
+        xn = np.cross(ys, zn) / np.linalg.norm(np.cross(ys, zn))
+        yn = np.cross(zn, xn)
+
+        R_mat_np = np.hstack(
+            (np.reshape(xn,(3,1)),np.reshape(yn,(3,1)),np.reshape(zn,(3,1))))
+        R_mat = R.from_matrix(R_mat_np)
+        print(np.linalg.det(R_mat_np))
+
+        eul_angles = R_mat.as_euler('zxy') ## this might be problematic.
+        # consider manually doing it.
+        self.state[3] = eul_angles[1]
+        self.state[4] = eul_angles[2]
+        print(psi_t - eul_angles[0])
+        print(eul_angles)
+
+        h_omega = (mass / u0_ff) * ((np.dot(jer_t, zn)) * zn - jer_t)
+        self.state[9] = -np.dot(h_omega, yn)
+        self.state[10] = np.dot(h_omega, xn)
+        self.state[11] = psi_dot_t * np.dot(zw, zn)
+        return self.state.copy()
+
     def PDController(self, traj):
         """
         looks at the current state and nominal differentially flat path to 
         compute the control to be applied.
 
         """
-        x = self.state  # assume perfectly measurable system
+        # state params
+        x = (self.state).copy()  # assume perfectly measurable system
+        t = self.time
+        mass = self.m
+        g = self.g
+        J = self.J
+
+        pos = x[0:3]
+        phi = x[3]
+        theta = x[4]
+        psi = x[5]
+        vel = x[6:9]
+        omega = x[9:12]
+        
+        r1 = np.array([ [1,0,0],
+                        [0,np.cos(phi),-np.sin(phi)],
+                        [0,np.sin(phi),np.cos(phi)]])
+        r2 = np.array([ [np.cos(theta),0,np.sin(theta)],
+                        [0,1,0],
+                        [-np.sin(theta),0,np.cos(theta)]])               
+        r3 = np.array([ [np.cos(psi),-np.sin(psi),0],
+                        [np.sin(psi),np.cos(psi),0],
+                        [0,0,1]])
+
+        Rb = r3 @ r1 @ r2
+        
+        # trajectory params
+        # print(t)
+        psi_t = traj.sigma(t)[3]
+        psi_dot_t = traj.sigma(t,1)[3]
+        psi_ddot_t = traj.sigma(t,2)[3]
+        pos_t = traj.sigma(t)[0:3]
+        vel_t = traj.sigma(t,1)[0:3]
+        acc_t = traj.sigma(t,2)[0:3]
+        jer_t = traj.sigma(t,3)[0:3]
+        sna_t = traj.sigma(t,4)[0:3]
+
+        # control 
+        u = np.zeros((4,))
+
+        # gains
+        g1 = 0
+        g2 = 0
+        g3 = 0
+        g4 = 0
+        # g1 = 1000 #200
+        # g2 = 0
+        # g3 = 4.375 #10
+        # g4 = 0.1 #10
+        Ke = g1 * np.eye(3)
+        Kv = g2 * np.eye(3)
+        Kr = g3 * np.eye(3)
+        Kw = g4 * np.eye(3)
+
+        zw = np.array([0,0,1])
+        yw = np.array([0,1,0])
+        xw = np.array([1,0,0])
+
+        e_x = pos_t - pos
+        e_v = vel_t - vel
+        Fdes = mass * acc_t - mass * g * zw + Ke @ e_x + Kv @ e_v
+        u[0] = - np.dot(Rb[:,2], Fdes)
+
+        zd = - Fdes / np.linalg.norm(Fdes)
+        ys = np.array([-np.sin(psi_t), np.cos(psi_t), 0])
+        xd = np.cross(ys, zd) / np.linalg.norm(np.cross(ys, zd))
+        yd = np.cross(zd, xd)
+
+        Rdes = np.hstack(
+            (np.reshape(xd,(3,1)),np.reshape(yd,(3,1)),np.reshape(zd,(3,1))))
+
+        h_omega_d = (mass / u[0]) * ((np.dot(jer_t, zd)) * zd - jer_t)
+        p_d = -np.dot(h_omega_d, yd)
+        q_d = np.dot(h_omega_d, xd)
+        r_d = psi_dot_t * np.dot(zw, zd)
+        omega_d = np.array([p_d, q_d, r_d])
+
+        skew_mat = 0.5 * ( np.transpose(Rb) @ Rdes - np.transpose(Rdes) @ Rb)
+        e_r = np.array([skew_mat[2,1], skew_mat[0,2], skew_mat[1,0]])
+        e_w = (np.transpose(Rb) @ Rdes @ omega_d) - omega
+
+        Fn = mass * acc_t - mass * g * zw
+        # u0_ff = np.linalg.norm(Fn)
+        u0_ff = - np.dot(Rb[:,2], Fn)
+        zn = - Fn / np.linalg.norm(Fn)
+        xn = np.cross(ys, zn) / np.linalg.norm(np.cross(ys, zn))
+        yn = np.cross(zn, xn)
+        
+        # u0_ff = u[0]
+        # zn = zd.copy()
+        # xn = xd.copy()
+        # yn = yd.copy()
+
+        Rn = np.hstack(
+            (np.reshape(xn,(3,1)),np.reshape(yn,(3,1)),np.reshape(zn,(3,1))))
+
+        h_omega = (mass / u0_ff) * ((np.dot(jer_t, zn)) * zn - jer_t)
+        p_t = -np.dot(h_omega, yn)
+        q_t = np.dot(h_omega, xn)
+        r_t = psi_dot_t * np.dot(zw, zn)
+        # omega_t = np.array([p_t, q_t, r_t])
+
+        # omega_nw = p_t * xn + q_t * yn + r_t * zn
+        omega_nw = np.array([p_t,q_t,r_t])
+
+        u0_ff_dot = - mass * np.dot(jer_t, zn)
+        u0_ff_ddot = -np.dot(
+            (mass * sna_t + np.cross(omega_nw, np.cross(omega_nw, zn))),
+            zn)
+
+        h_alpha = (-1.0/u0_ff) * (
+            mass * sna_t + u0_ff_ddot * zn + \
+                2.0 * u0_ff_dot * np.cross(omega_nw,zn) + \
+                    np.cross(omega_nw, np.cross(omega_nw, zn)))
+        
+        alpha1 = - np.dot(h_alpha, yn)
+        alpha2 = np.dot(h_alpha, xn)
+        alpha3 = np.dot((psi_ddot_t * zn - psi_dot_t * h_omega), zw)
+        # omega_dot_nw = alpha1 * xn + alpha2 * yn + alpha3 * zn
+        omega_dot_nw = np.array([alpha1,alpha2,alpha3])
+
+        # u_vec = J @ (np.transpose(Rb) @ Rdes @ omega_dot_nw - 
+        #             np.cross(omega, np.transpose(Rb) @ Rdes @ omega_nw)) + \
+        #         np.cross(omega, J @ omega) + Kr @ e_r + Kw @ e_w
+
+        u_vec = J @ (np.transpose(Rb) @ Rn @ omega_dot_nw - 
+                    np.cross(omega, np.transpose(Rb) @ Rn @ omega_nw)) + \
+                np.cross(omega, J @ omega) + Kr @ e_r + Kw @ e_w
+        
+        # u_vec = Kr @ e_r + Kw @ e_w
+
+        u[1:4] = u_vec
+
+        # print(Rdes - Rn)
+        return u
+
+    def solveSystem(self, init_pos, T, traj):
+
+        t0 = 0
+        self.state = init_pos
+
+        def controlSystem(t, x, trajectory):
+            self.setSystemTime(t)
+            u = self.PDController(trajectory)
+            return self.nlDyn(u,x)
+        
+        backend = 'dopri5'
+        nsteps = 5000
+        atol = 1e-8
+        rtol = 1e-8
+        # backend = 'dop853'
+        solver = ode(controlSystem).set_integrator(backend, nsteps = nsteps, 
+                                                    atol = atol, rtol = rtol)
+        total_steps = int(np.floor((T/ self.dt)))
+
+        all_states = []
+        all_t = []
+        for time_step in range(total_steps):
+            state = []
+            time = []
+            t_init = t0 + time_step * self.dt
+            def solout(t, y):
+                time.append(t)
+                state.append(y.copy()) 
+            solver.set_solout(solout)
+            solver.set_initial_value(self.state, t_init).set_f_params(traj)
+            solver.integrate(t_init + self.dt)
+            self.state = state[-1]
+            # state_arr = np.array(state)
+            # time_arr = np.array(time)
+            all_states.append(state)
+            all_t.append(time)
+
+        return np.hstack(all_t), np.transpose(np.vstack(all_states))
 
 class Trajectory():
     """
@@ -196,14 +439,24 @@ class Trajectory():
             if order != 0:
                 sigma_ret[idx] = np.polyder(sigma_arr[idx], order)
         
+        # if order == 0:
+        #     return np.array([sigma_arr[0](t), 
+        #                      sigma_arr[1](t), 
+        #                      sigma_arr[2](t),
+        #                      sigma_arr[3](t)])
+        # else:
+        #     return np.array([sigma_ret[0](t), 
+        #                      sigma_ret[1](t), 
+        #                      sigma_ret[2](t),
+        #                      sigma_ret[3](t)])
         if order == 0:
-            return np.array([sigma_arr[0](t), 
-                             sigma_arr[1](t), 
-                             sigma_arr[2](t),
-                             sigma_arr[3](t)])
+            return np.array([sigma_arr[0](t-j), 
+                             sigma_arr[1](t-j), 
+                             sigma_arr[2](t-j),
+                             sigma_arr[3](t-j)])
         else:
-            return np.array([sigma_ret[0](t), 
-                             sigma_ret[1](t), 
-                             sigma_ret[2](t),
-                             sigma_ret[3](t)])
+            return np.array([sigma_ret[0](t-j), 
+                             sigma_ret[1](t-j), 
+                             sigma_ret[2](t-j),
+                             sigma_ret[3](t-j)])
     
