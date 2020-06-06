@@ -78,16 +78,9 @@ class Quadrotor():
                         [np.sin(psi),np.cos(psi),0],
                         [0,0,1]])
 
-        # col1 = np.reshape(np.transpose(r2)[:,0],(3,1))
-        # col2 = np.reshape(np.array([0,1,0]),(3,1))
-        # col3 = np.reshape(np.transpose((r2 @ r1))[:,2],(3,1))
-        # Tau = np.hstack((col1,col2,col3))
         Tau = np.array([[np.cos(theta), 0, -np.sin(theta)],
                         [0, 1, np.sin(phi) * np.cos(theta)],
                         [np.sin(theta), 0, np.cos(phi) * np.cos(theta)]])
-        # Tau = np.array([[np.cos(theta), 0, -np.cos(phi)*np.sin(theta)],
-        #                 [0,1, np.sin(phi)],
-        #                 [np.sin(theta), 0, np.cos(phi) * np.cos(theta)]])
         x_dot[3:6] = np.linalg.inv(Tau) @ omega
 
         rot_arr = r3 @ r1 @ r2 @ np.array([0,0,1])
@@ -161,7 +154,6 @@ class Quadrotor():
             x[10] = np.dot(h_omega, xn)
             x[11] = psi_dot * np.dot(zw, zn)
 
-            # omega_nw = x[9] * xn + x[10] * yn + x[11] * zn
             omega_nw = np.array([x[9],x[10],x[11]])
 
             u1_dot = - mass * np.dot(sigma_jer, zn)
@@ -177,7 +169,6 @@ class Quadrotor():
             alpha1 = - np.dot(h_alpha, yn)
             alpha2 = np.dot(h_alpha, xn)
             alpha3 = np.dot((psi_ddot * zn - psi_dot * h_omega), zw)
-            # omega_dot_nw = alpha1 * xn + alpha2 * yn + alpha3 * zn
             omega_dot_nw = np.array([alpha1,alpha2,alpha3])
             
             # possibly minus sign
@@ -189,7 +180,10 @@ class Quadrotor():
 
         return x_all, u_all
 
-    def setStateAtNomTime(self, traj, t):
+    def getStateAtNomTime(self, traj, t):
+        '''
+        returns the nominal state of the quadrotor along a trajectory at time t
+        '''
         
         psi_t = traj.sigma(t)[3]
         psi_dot_t = traj.sigma(t,1)[3]
@@ -200,14 +194,14 @@ class Quadrotor():
         mass = self.m
         g = self.g
 
+        out_state = np.zeros_like(self.state)
         zw = np.array([0,0,1])
 
-        self.state[0:3] = pos_t.copy()
-        self.state[6:9] = vel_t.copy()
-        self.state[5] = psi_t
+        out_state[0:3] = pos_t.copy()
+        out_state[6:9] = vel_t.copy()
+        out_state[5] = psi_t
 
         Fn = mass * acc_t - mass * g * zw
-        # u0_ff = np.linalg.norm(Fn)
         u0_ff = - np.dot(zw, Fn)
 
         zn = - Fn / np.linalg.norm(Fn)
@@ -218,27 +212,33 @@ class Quadrotor():
         R_mat_np = np.hstack(
             (np.reshape(xn,(3,1)),np.reshape(yn,(3,1)),np.reshape(zn,(3,1))))
         R_mat = R.from_matrix(R_mat_np)
-        print(np.linalg.det(R_mat_np))
 
         eul_angles = R_mat.as_euler('zxy') ## this might be problematic.
         # consider manually doing it.
-        self.state[3] = eul_angles[1]
-        self.state[4] = eul_angles[2]
-        print(psi_t - eul_angles[0])
-        print(eul_angles)
+        out_state[3] = eul_angles[1]
+        out_state[4] = eul_angles[2]
 
         h_omega = (mass / u0_ff) * ((np.dot(jer_t, zn)) * zn - jer_t)
-        self.state[9] = -np.dot(h_omega, yn)
-        self.state[10] = np.dot(h_omega, xn)
-        self.state[11] = psi_dot_t * np.dot(zw, zn)
-        return self.state.copy()
+        out_state[9] = -np.dot(h_omega, yn)
+        out_state[10] = np.dot(h_omega, xn)
+        out_state[11] = psi_dot_t * np.dot(zw, zn)
+        return out_state.copy()
+
+    def setStateAtNomTime(self, traj, t):
+        '''
+        Sets the quadrotor state to the nominal path state at time t
+        '''
+        out_state = self.getStateAtNomTime(traj, t)
+        self.setState(out_state)
+        return out_state.copy()
+
 
     def PDController(self, traj):
         """
         looks at the current state and nominal differentially flat path to 
-        compute the control to be applied.
-
+        compute the PD control to be applied.
         """
+
         # state params
         x = (self.state).copy()  # assume perfectly measurable system
         t = self.time
@@ -266,7 +266,6 @@ class Quadrotor():
         Rb = r3 @ r1 @ r2
         
         # trajectory params
-        # print(t)
         psi_t = traj.sigma(t)[3]
         psi_dot_t = traj.sigma(t,1)[3]
         psi_ddot_t = traj.sigma(t,2)[3]
@@ -280,22 +279,15 @@ class Quadrotor():
         u = np.zeros((4,))
 
         # gains
-        g1 = 0
-        g2 = 0
-        g3 = 0
-        g4 = 0
-        # g1 = 1000 #200
-        # g2 = 0
-        # g3 = 4.375 #10
-        # g4 = 0.1 #10
-        Ke = g1 * np.eye(3)
-        Kv = g2 * np.eye(3)
-        Kr = g3 * np.eye(3)
-        Kw = g4 * np.eye(3)
+        (gxy, gz, gxyv, gzv, gxyr, gzr, gxyw, gzw) = \
+            (10 , 10 , 1   , 1  , 1000   , 100  , 10   , 1)
+        
+        Ke = np.eye(3) * np.array([gxy,gxy,gz])
+        Kv = np.eye(3) * np.array([gxyv,gxyv,gzv])
+        Kr = np.eye(3) * np.array([gxyr,gxyr,gzr])
+        Kw = np.eye(3) * np.array([gxyw,gxyw,gzw])
 
         zw = np.array([0,0,1])
-        yw = np.array([0,1,0])
-        xw = np.array([1,0,0])
 
         e_x = pos_t - pos
         e_v = vel_t - vel
@@ -321,16 +313,10 @@ class Quadrotor():
         e_w = (np.transpose(Rb) @ Rdes @ omega_d) - omega
 
         Fn = mass * acc_t - mass * g * zw
-        # u0_ff = np.linalg.norm(Fn)
         u0_ff = - np.dot(Rb[:,2], Fn)
         zn = - Fn / np.linalg.norm(Fn)
         xn = np.cross(ys, zn) / np.linalg.norm(np.cross(ys, zn))
         yn = np.cross(zn, xn)
-        
-        # u0_ff = u[0]
-        # zn = zd.copy()
-        # xn = xd.copy()
-        # yn = yd.copy()
 
         Rn = np.hstack(
             (np.reshape(xn,(3,1)),np.reshape(yn,(3,1)),np.reshape(zn,(3,1))))
@@ -339,9 +325,7 @@ class Quadrotor():
         p_t = -np.dot(h_omega, yn)
         q_t = np.dot(h_omega, xn)
         r_t = psi_dot_t * np.dot(zw, zn)
-        # omega_t = np.array([p_t, q_t, r_t])
 
-        # omega_nw = p_t * xn + q_t * yn + r_t * zn
         omega_nw = np.array([p_t,q_t,r_t])
 
         u0_ff_dot = - mass * np.dot(jer_t, zn)
@@ -357,25 +341,19 @@ class Quadrotor():
         alpha1 = - np.dot(h_alpha, yn)
         alpha2 = np.dot(h_alpha, xn)
         alpha3 = np.dot((psi_ddot_t * zn - psi_dot_t * h_omega), zw)
-        # omega_dot_nw = alpha1 * xn + alpha2 * yn + alpha3 * zn
         omega_dot_nw = np.array([alpha1,alpha2,alpha3])
-
-        # u_vec = J @ (np.transpose(Rb) @ Rdes @ omega_dot_nw - 
-        #             np.cross(omega, np.transpose(Rb) @ Rdes @ omega_nw)) + \
-        #         np.cross(omega, J @ omega) + Kr @ e_r + Kw @ e_w
 
         u_vec = J @ (np.transpose(Rb) @ Rn @ omega_dot_nw - 
                     np.cross(omega, np.transpose(Rb) @ Rn @ omega_nw)) + \
                 np.cross(omega, J @ omega) + Kr @ e_r + Kw @ e_w
-        
-        # u_vec = Kr @ e_r + Kw @ e_w
 
         u[1:4] = u_vec
-
-        # print(Rdes - Rn)
         return u
 
     def solveSystem(self, init_pos, T, traj):
+        '''
+        does ODE45 integration to progress the system along a trajectory
+        '''
 
         t0 = 0
         self.state = init_pos
@@ -389,7 +367,6 @@ class Quadrotor():
         nsteps = 5000
         atol = 1e-8
         rtol = 1e-8
-        # backend = 'dop853'
         solver = ode(controlSystem).set_integrator(backend, nsteps = nsteps, 
                                                     atol = atol, rtol = rtol)
         total_steps = int(np.floor((T/ self.dt)))
@@ -407,8 +384,6 @@ class Quadrotor():
             solver.set_initial_value(self.state, t_init).set_f_params(traj)
             solver.integrate(t_init + self.dt)
             self.state = state[-1]
-            # state_arr = np.array(state)
-            # time_arr = np.array(time)
             all_states.append(state)
             all_t.append(time)
 
@@ -439,16 +414,6 @@ class Trajectory():
             if order != 0:
                 sigma_ret[idx] = np.polyder(sigma_arr[idx], order)
         
-        # if order == 0:
-        #     return np.array([sigma_arr[0](t), 
-        #                      sigma_arr[1](t), 
-        #                      sigma_arr[2](t),
-        #                      sigma_arr[3](t)])
-        # else:
-        #     return np.array([sigma_ret[0](t), 
-        #                      sigma_ret[1](t), 
-        #                      sigma_ret[2](t),
-        #                      sigma_ret[3](t)])
         if order == 0:
             return np.array([sigma_arr[0](t-j), 
                              sigma_arr[1](t-j), 

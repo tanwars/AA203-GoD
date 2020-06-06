@@ -76,34 +76,21 @@ traj_pty = []
 traj_ptz = []
 traj_ptp = []
 for num in range(len(t_kf)):
-    T = t_kf[num]
+    if num == 0:
+        T = t_kf[num]
+    else: 
+        T = t_kf[num] - t_kf[num-1]
+    x = np.poly1d(traj[:,num,0])
+    y = np.poly1d(traj[:,num,1])
+    z = np.poly1d(traj[:,num,2])
+    psi = np.poly1d(traj[:,num,3])
     for i in range(int(T/dt)):
         t = i * dt
-        x = np.poly1d(traj[:,num,0])
-        y = np.poly1d(traj[:,num,1])
-        z = np.poly1d(traj[:,num,2])
-        psi = np.poly1d(traj[:,num,3])
         traj_ptx.append(x(t))
         traj_pty.append(y(t))
         traj_ptz.append(z(t))
         traj_ptp.append(psi(t))
 
-# plt.figure()
-# ax = plt.axes(projection='3d')
-# ax.plot3D(traj_ptx, traj_pty, traj_ptz, 'gray')
-# ax.set_xlim(0, 1.5)
-# ax.set_ylim(0, 1.5)
-# ax.set_zlim(0, 1.5)
-# ax.set_xlabel('x')
-# ax.set_ylabel('y')
-# ax.set_zlabel('z')
-
-## plt.figure()
-## plt.plot(traj_ptz)
-## plt.plot(x[1,:])
-## plt.plot(x[2,:])
-
-# plt.show()
 ##################
 
 trajectory = Trajectory(traj, t_kf)
@@ -189,15 +176,15 @@ ax.set_zlabel('z')
 # ax.set_ylim(0, 10)
 # ax.set_zlim(0, 10)
 
-# plt.figure()
-# # plt.plot(x[0,:])
-# # plt.plot(x[1,:])
-# plt.plot(est_state[4,:] * 180/np.pi)
+plt.figure()
+# plt.plot(x[0,:])
+# plt.plot(x[1,:])
+plt.plot(est_state[4,:] * 180/np.pi)
 
-# plt.figure()
-# plt.plot(u[0,:], label = 'u0')
-# plt.plot(u[1,:], label = 'u1')
-# plt.plot(u[2,:], label = 'u2')
-# plt.plot(u[3,:], label = 'u3')
-# plt.legend()
+plt.figure()
+plt.plot(u[0,:], label = 'u0')
+plt.plot(u[1,:], label = 'u1')
+plt.plot(u[2,:], label = 'u2')
+plt.plot(u[3,:], label = 'u3')
+plt.legend()
 plt.show()
