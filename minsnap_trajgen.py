@@ -1,6 +1,7 @@
 import numpy as np
 from scipy.linalg import block_diag
 import cvxpy as cvx
+import matplotlib.pyplot as plt
 
 
 # N - number of coefficients (degree + 1)
@@ -61,10 +62,20 @@ def minSnapTG(N, n, T, W):
     return P
 
 
+# Test Trajectory Generation
 N = 8
 n = 4
-T = np.array([1, 3], dtype=np.float64)
-W = np.array([0, 3, 8], dtype=np.float64)
+T = 10*np.array([1, 3, 2, 5, 2], dtype=np.float64)
+Wx = np.array([0, 3, 8, 4, 9, 6], dtype=np.float64)
+Wy = np.array([0,-2, 6, 4, 2,-4], dtype=np.float64)
 
-P = minSnapTG(N, n, T, W)
-print(P)
+X = minSnapTG(N, n, T, Wx)
+Y = minSnapTG(N, n, T, Wy)
+
+# Plot generated trajectory
+dt = 0.01
+for i in range(len(T)):
+    Ti = np.arange(0, T[i], dt)
+    plt.plot(np.polyval(X[:,i], Ti), np.polyval(Y[:,i], Ti))
+
+plt.show()
