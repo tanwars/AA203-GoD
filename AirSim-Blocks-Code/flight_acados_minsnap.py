@@ -207,6 +207,9 @@ all_diff_flat_states = np.zeros((total_steps-1,n))
 print('-------- Executing the path --------')
 print('----- To pre-maturely safely exit press x and enter -------')
 
+prev_yaw = 0
+jump_yaw = np.pi # to check if shift from -pi to pi happens
+
 for i in range(total_steps-1):
     
     if breakNow == True:
@@ -239,6 +242,12 @@ for i in range(total_steps-1):
 
     client.moveByAngleRatesThrottleAsync(u[0], u[1], u[2], u[3], dt).join()
     x = get_drone_state((client.getMultirotorState()).kinematics_estimated, n)
+
+    if (prev_yaw - x[5] > jump_yaw):  # checks if yaw jumped from pi to -pi 
+        x[5] += 2 * np.pi
+    elif (prev_yaw - x[5] < -jump_yaw): # checks if yaw jumped from -pi to pi 
+        x[5] -= 2 * np.pi   
+    prev_yaw = x[5]
 
     ocp_solver.set(0, "lbx", x) # set intial conditions for next time step
     ocp_solver.set(0, "ubx", x) # set intial conditions for next time step
