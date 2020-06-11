@@ -116,9 +116,11 @@ wpts[:,2] += z_offset
 wpts_test = wpts[:num_wpts,:].copy()
 psi_test = np.zeros((num_wpts,))
 if rotate_quad == True:
-    for i in range(1,psi_test.shape[0]):
-        psi_test[i] = np.arctan2(wpts_test[i,1] - wpts_test[i-1,1],
-                                wpts_test[i,0] - wpts_test[i-1,0])
+    psi_test = np.array([0, -np.pi/2,  -np.pi/2,  -np.pi,  -3*np.pi/2,  -np.pi, 
+                             -3*np.pi/2,  -2*np.pi,  -2*np.pi])
+    # for i in range(1,psi_test.shape[0]):
+    #     psi_test[i] = np.arctan2(wpts_test[i,1] - wpts_test[i-1,1],
+    #                             wpts_test[i,0] - wpts_test[i-1,0])
 
 P = [None] * 4
 for i in range(3):
