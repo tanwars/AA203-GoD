@@ -1,5 +1,5 @@
 # Drone Racing in Airsim
-### Siddharth Tanwar, Adam Dai, Shubh Gupta
+#### Siddharth Tanwar, Adam Dai, Shubh Gupta
 
 This repository contains code for end-of-quarter project in course AA203, Optimal and Learning based control (Spring 2020). In this project, we aim to explore methods of autonomous drone racing by utilizing the AirSim Drone Racing Labframework [1] used in NeurIPS 2019 to host the Game of Drones competition. We implemented two approached to perform waypoint following for a quadrotor: a non-learning based and a learning based approach.  The non-learning based approach comprises of two parts:  minimum snap trajectory generation [3] and MPC controller [4] to follow the nominal path. The learning based method uses an Actor-Critic architecture for velocity control with clipped double Q-learning objective function [5, 6]. 
 
