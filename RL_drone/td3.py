@@ -17,7 +17,7 @@ def hidden_init(layer):
     return (-lim, lim)
 
 # Modified from https://github.com/djbyrne/TD3
-# to not consider delay in policy rewards
+# does not consider delay in policy rewards, only the clipped DDQN objective
 class Actor(nn.Module):
     """Initialize parameters and build model.
         Args:
