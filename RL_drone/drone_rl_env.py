@@ -28,7 +28,7 @@ class BaselineRacerEnv(BaselineRacer):
 
         self.action_high = 1
         self.action_low = -1
-        self.max_vel = 40
+        self.max_vel = drone_params["v_max"]
 
         self.observation_space = [33,None]
         self.action_space = [4,None]
@@ -100,28 +100,30 @@ class BaselineRacerEnv(BaselineRacer):
 
         feat = np.r_[orientation,linear_velocity,angular_velocity,pos_feat,height, cur_gate_or, scene_feat]
 
-        # feat = feat / np.linalg.norm(feat)
+        # feat /= np.linalg.norm(feat)
 
         return feat
 
     def calculate_waypoint(self, action = [0, 0, 0, 1.]):
-        cur_wp = self.cur_waypt.to_numpy_array()
+        # cur_wp = self.cur_waypt.to_numpy_array()
         cur_gate = self.gate_poses_ground_truth[self.gates_complete+1].position.to_numpy_array()
         position = self.airsim_client.simGetVehiclePose(self.drone_name).position.to_numpy_array()
         dir_vec = cur_gate - position
         dir_vec = dir_vec / np.linalg.norm(dir_vec)
-        new_wp = cur_wp + 3*action[3]*action[:3] + 2*(dir_vec)
+        # new_wp = cur_wp + 0.9*action[3]*action[:3] + 0.1*(dir_vec)
+        vel = 8.*action[3]*action[:3] + 1.*(dir_vec)
         # if new_wp[2]>-1.:
         #     new_wp[2] = -1.
-        return to_airsim_vector(new_wp)
+        # return to_airsim_vector(new_wp)
+        return vel
 
     def transition(self,action=[0.,0.,0.,0.]):
         
         waypt = self.calculate_waypoint(action)
 
-        # self.airsim_client.moveByVelocityAsync(action[0],action[1],action[2],vehicle_name=self.drone_name)
-        self.airsim_client.moveOnSplineAsync([waypt], vel_max=30.0, acc_max=15.0, 
-            add_position_constraint=True, add_velocity_constraint=False, add_acceleration_constraint=False, viz_traj=self.viz_traj, viz_traj_color_rgba=self.viz_traj_color_rgba, vehicle_name=self.drone_name)
+        self.airsim_client.moveByVelocityAsync(waypt[0],waypt[1],waypt[2], duration=0.5,vehicle_name=self.drone_name)
+        # self.airsim_client.moveOnSplineAsync([waypt], vel_max=30.0, acc_max=15.0,
+        #     add_position_constraint=True, add_velocity_constraint=False, add_acceleration_constraint=False, viz_traj=self.viz_traj, viz_traj_color_rgba=self.viz_traj_color_rgba, vehicle_name=self.drone_name)
         time.sleep(0.5)
 
         next_state = self.state_to_feature()
@@ -134,7 +136,7 @@ class BaselineRacerEnv(BaselineRacer):
         else:
             done = False
 
-        self.cur_waypt = waypt
+        # self.cur_waypt = waypt
 
         return next_state, reward, done, "OK" 
 
@@ -171,5 +173,4 @@ class BaselineRacerEnv(BaselineRacer):
     def step(self,action,stall = False):
         if self.time - self.last_gate_change_time >= 3000.0*1e7:
             return self.state_to_feature(),0,True,"Hanged"
-        time.sleep(2.)
         return self.transition(action)

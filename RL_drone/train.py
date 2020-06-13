@@ -22,7 +22,7 @@ params = {
     "vel_constraints": False,
     "race_tier": 1,
     "level_name": "Final_Tier_1",
-    "rand_steps": 100,
+    "rand_steps": 200,
     "explore_steps": 50000,
     "batch_size": 10,
     "gamma": 0.99,
@@ -109,7 +109,7 @@ class Policy:
         action[:3] = state[10:13]
         action[3] = np.linalg.norm(action[:3])
         action[:3] = action[:3]/action[3]
-        action[3] = action[3]/5.
+        action[3] = 1.
         # action = np.random.normal(self.env.action_low, self.env.action_high-self.env.action_low, size=self.env.action_space[0])
 
 
@@ -158,14 +158,12 @@ def train(agent, env, writer, params):
     timesteps_since_eval = 0
     episode_num = agent.ep_num
     episode_reward = 0
-    episode_timesteps = 0
-    done = False 
+    episode_timesteps = params["rand_steps"]
+    done = True 
     obs = env.reset_race()
     rewards = []
     best_avg = -100000
 
-    agent.eval_mode()
-    
     while total_timesteps < params["explore_steps"]:
     
         if done: 
@@ -186,23 +184,20 @@ def train(agent, env, writer, params):
             if avg_reward >= params["reward_thresh"]:
                 break
 
-            agent.train_mode()
             agent.train(replay_buffer, episode_timesteps, params["batch_size"], params["gamma"], params["tau"], params["noise"], params["noise_clip"], params["policy_freq"])
-            agent.eval_mode()
-            # replay_buffer.dump_buff()
+            replay_buffer.dump_buff()
             
             # Write to Tensorboard
             writer.add_scalar("avg_reward", avg_reward, total_timesteps)
-            writer.add_scalar("reward_step", reward, total_timesteps)
+            # writer.add_scalar("reward_step", reward, total_timesteps)
             writer.add_scalar("episode_reward", episode_reward, total_timesteps)
 
             episode_reward = 0
             episode_timesteps = 0
             episode_num += 1 
 
-            agent.adjust_learning_rate(episode_num)
-
-            env.reset_race()
+            obs = env.reset_race()
+            time.sleep(1.0)
 
         action = agent.select_action(np.array(obs), noise=0.1)
         new_obs, reward, done, _ = env.step(action) 
@@ -220,9 +215,7 @@ def train(agent, env, writer, params):
 
 def init_drone_env(params):
     drone_name = "drone_1"
-    drone_params = {"r_safe": 0.5,
-         "r_coll": 0.5,
-         "v_max": 80.0,
+    drone_params = {"v_max": 80.0,
          "a_max": 40.0}
 
     drone = BaselineRacerEnv(
