@@ -11,12 +11,13 @@ import random
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# from baselines.common.segment_tree import SumSegmentTree, MinSegmentTree
 def hidden_init(layer):
     fan_in = layer.weight.data.size()[0]
     lim = 1. / np.sqrt(fan_in)
     return (-lim, lim)
 
+# Modified from https://github.com/djbyrne/TD3
+# does not consider delay in policy rewards, only the clipped DDQN objective
 class Actor(nn.Module):
     """Initialize parameters and build model.
         Args:
@@ -35,22 +36,23 @@ class Actor(nn.Module):
         super(Actor, self).__init__()
 
         self.l1 = nn.Linear(state_dim, 32)
-        self.bn1 = nn.BatchNorm1d(num_features=32)
         self.l2 = nn.Linear(32, 16)
-        self.bn2 = nn.BatchNorm1d(num_features=16)
         self.l3 = nn.Linear(16, action_dim-1)
         self.l4 = nn.Linear(16, 1)
 
+        self.bn1 = nn.BatchNorm1d(num_features=32)
+        self.bn2 = nn.BatchNorm1d(num_features=16)
+        
         self.max_action = max_action
 
 
     def forward(self, x):
         x = F.relu(self.bn1(self.l1(x)))
         x = F.relu(self.bn2(self.l2(x)))
-        vec = torch.tanh(self.l3(x))
-        vel = torch.sigmoid(self.l4(x))  
-        action = torch.cat([vec,vel],1)
-        return action
+        vel_d = torch.tanh(self.l3(x))
+        vel_a = torch.sigmoid(self.l4(x))  
+        x = torch.cat([vel_d,vel_a],1)
+        return x
 
 class Critic(nn.Module):
     """Initialize parameters and build model.
@@ -70,25 +72,20 @@ class Critic(nn.Module):
         super(Critic, self).__init__()
 
         # Q1 architecture
-        # self.l1 = nn.Linear(state_dim + action_dim, 32)
-        # self.bn1 = nn.BatchNorm1d(num_features=32)
-        # self.l2 = nn.Linear(32, 16)
-        # self.bn2 = nn.BatchNorm1d(num_features=16)
-        # self.l3 = nn.Linear(16, 1)
-
         self.l1 = nn.Linear(state_dim + action_dim, 32)
-        self.bn1 = nn.BatchNorm1d(num_features=32)
         self.l2 = nn.Linear(32, 16)
-        self.bn2 = nn.BatchNorm1d(num_features=16)
         self.l3 = nn.Linear(16, 1)
 
+        self.bn1 = nn.BatchNorm1d(num_features=32)
+        self.bn2 = nn.BatchNorm1d(num_features=16)
+        
         # Q2 architecture
         self.l4 = nn.Linear(state_dim + action_dim, 32)
-        self.bn3 = nn.BatchNorm1d(num_features=32)
         self.l5 = nn.Linear(32, 16)
-        self.bn4 = nn.BatchNorm1d(num_features=16)
         self.l6 = nn.Linear(16, 1)
 
+        self.bn3 = nn.BatchNorm1d(num_features=32)
+        self.bn4 = nn.BatchNorm1d(num_features=16)
 
     def forward(self, x, u):
         xu = torch.cat([x, u], 1)
@@ -102,6 +99,13 @@ class Critic(nn.Module):
         x2 = self.l6(x2)
         return x1, x2
 
+    def Q1(self, x, u):
+        xu = torch.cat([x, u], 1)
+
+        x1 = F.relu(self.bn1(self.l1(xu)))
+        x1 = F.relu(self.bn2(self.l2(x1)))
+        x1 = self.l3(x1)
+        return x1
 
 
 class TD3(object):
@@ -146,17 +150,6 @@ class TD3(object):
         self.max_action = max_action
         self.env = env
 
-
-    def adjust_learning_rate(self, epoch):
-        """Sets the learning rate to the initial LR decayed by 10 every 30 epochs"""
-        self.lr = max(self.lr * (0.3333333 ** (epoch // 10)),(10**-5))
-        for param_group in self.critic_optimizer.param_groups:
-            param_group['lr'] = self.lr
-
-        for param_group in self.actor_optimizer.param_groups:
-            param_group['lr'] = self.lr
-
-        
     def select_action(self, state, noise=0.1):
         """Select an appropriate action from the agent policy
         
@@ -178,13 +171,6 @@ class TD3(object):
             
         return action.clip(self.env.action_low, self.env.action_high)
 
-    def eval_mode(self):
-        self.actor.eval()
-
-    def train_mode(self):
-        self.actor.train()
-
-    
     def train(self, replay_buffer, iterations, batch_size=100, discount=0.99, tau=0.005, policy_noise=0.2, noise_clip=0.5, policy_freq=2):
         """Train and update actor and critic networks
         
@@ -224,66 +210,41 @@ class TD3(object):
             # Get current Q estimates
             current_Q1, current_Q2 = self.critic(state, action)
             simple_q1 = current_Q1.detach().mean().cpu().numpy()
-            # log_file.write("Q1 " + str(simple_q1) + "\n")
-
+            
             simple_q2 = current_Q2.detach().mean().cpu().numpy()
-            # log_file.write("Q2 " + str(simple_q2) + "\n")
+            
             # Compute critic loss
             critic_loss = F.mse_loss(current_Q1, target_Q) + F.mse_loss(current_Q2, target_Q) 
             log_c_loss = critic_loss.detach().mean().cpu().numpy()
-            # log_file.write("CL " + str(log_c_loss) + "\n")
-
+            
             # Optimize the critic
             self.critic_optimizer.zero_grad()
             critic_loss.backward()
             self.critic_optimizer.step()
 
-            # Delayed policy updates
-            if it % policy_freq == 0:
+            # Compute actor loss
+            actor_loss = -self.critic.Q1(state, self.actor(state)).mean()
 
-                # Compute actor loss
-                # actor_loss = -self.critic.Q1(state, self.actor(state)).mean()
-                comb_action = self.actor(state)
-                # comb_action = torch.cat([vec, vel],1)
-                q1, _ = self.critic(state,comb_action)
-                actor_loss = q1.mean()
+            # Optimize the actor 
+            self.actor_optimizer.zero_grad()
+            actor_loss.backward()
+            self.actor_optimizer.step()
 
-                log_a_loss = actor_loss.detach().cpu().numpy()
+            # Update the frozen target models
+            for param, target_param in zip(self.critic.parameters(), self.critic_target.parameters()):
+                target_param.data.copy_(tau * param.data + (1 - tau) * target_param.data)
 
-
-                # log_file.write("AL "+str(log_a_loss)+"\n")
-
-                # Optimize the actor 
-                self.actor_optimizer.zero_grad()
-                actor_loss.backward()
-                self.actor_optimizer.step()
-
-                # Update the frozen target models
-                for param, target_param in zip(self.critic.parameters(), self.critic_target.parameters()):
-                    target_param.data.copy_(tau * param.data + (1 - tau) * target_param.data)
-
-                for param, target_param in zip(self.actor.parameters(), self.actor_target.parameters()):
-                    target_param.data.copy_(tau * param.data + (1 - tau) * target_param.data)
+            for param, target_param in zip(self.actor.parameters(), self.actor_target.parameters()):
+                target_param.data.copy_(tau * param.data + (1 - tau) * target_param.data)
 
 
-    def save(self, episode_number, filename, directory):
-        torch.save({
-            "ep": episode_number,
-            "actor": self.actor.state_dict(),
-            "critic": self.critic.state_dict(),
-            "actor_optim": self.actor_optimizer.state_dict(),
-            "critic_optim" : self.critic_optimizer.state_dict(),
-            },"./saves/model.pth")
+    def save(self, episode_number, filename="best_avg", directory="./saves"):
+        torch.save(self.actor.state_dict(), '%s/%s_actor.pth' % (directory, filename))
+        torch.save(self.critic.state_dict(), '%s/%s_critic.pth' % (directory, filename))
 
 
     def load(self, filename="best_avg", directory="./saves"):
-        print("Loading model ....")
-
-        checkpoint = torch.load("./saves/model.pth")
-        self.actor.load_state_dict(checkpoint["actor"])
-        self.critic.load_state_dict(checkpoint["critic"])
-        self.actor_optimizer.load_state_dict(checkpoint["actor_optim"])
-        self.critic_optimizer.load_state_dict(checkpoint["critic_optim"])
-        self.ep_num = checkpoint["ep"]
-
-        print("Model load complete")
+        print("Loading model...")
+        self.actor.load_state_dict(torch.load('%s/%s_actor.pth' % (directory, filename)))
+        self.critic.load_state_dict(torch.load('%s/%s_critic.pth' % (directory, filename)))
+        print("Done")
