@@ -75,3 +75,35 @@ def quaternion_to_eul(q):
     theta = np.arcsin(2*(q0 * q2 - q3 * q1))
     psi = np.arctan2(2*(q0 * q3 + q1 * q2), 1 - 2 * ((q2)**2 + (q3)**2))
     return phi, theta, psi
+
+def eul_to_rotmat(phi, theta, psi):
+    r1 = np.array([ [1,0,0],
+                        [0,np.cos(phi),-np.sin(phi)],
+                        [0,np.sin(phi),np.cos(phi)]])
+    r2 = np.array([ [np.cos(theta),0,np.sin(theta)],
+                    [0,1,0],
+                    [-np.sin(theta),0,np.cos(theta)]])               
+    r3 = np.array([ [np.cos(psi),-np.sin(psi),0],
+                        [np.sin(psi),np.cos(psi),0],
+                        [0,0,1]])
+    
+    return r3 @ r1 @ r2
+
+def quaternion_to_rotmat(q):
+    phi, theta, psi = quaternion_to_eul(q)
+    return eul_to_rotmat(phi, theta, psi)
+
+def regularize_angle(ref, ang):
+    # ang_conv = ang
+    tol = -10 * np.pi / 180
+    if ref > ang:
+        while (ref - ang) > np.pi + tol:
+            ang += 2*np.pi
+        # ang_conv = ang
+    else:
+        while (ang - ref) > np.pi + tol:
+            ang -= 2*np.pi
+        # ang_conv = ang
+
+    # return ang_conv
+    return ang

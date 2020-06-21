@@ -10,9 +10,10 @@ import math
 import pickle
 
 from minsnap_trajgen import minSnapTG as mstg
+from minsnap_trajgen import minSnapTG_without_opt as mstgwoopt
 from quadrotor import Quadrotor, Trajectory
 
-from drone_util import get_drone_state, quaternion_to_eul
+from drone_util import get_drone_state, quaternion_to_eul, regularize_angle
 
 from models import linear_quad_model, acados_linear_quad_model, \
                     acados_nonlinear_quad_model, \
@@ -134,18 +135,27 @@ class MyRacer(object):
         start_orientation = self.airsim_client.simGetVehiclePose(vehicle_name=self.drone_name).orientation
         print(start_position)
         wpts[0,:] = np.array([start_position.x_val, start_position.y_val, start_position.z_val])
+        
+        psis = np.zeros((len(wpts_poses)+1,))
+        psi_true = np.zeros((len(wpts_poses)+1,))
+        psis[0] = (quaternion_to_eul(start_orientation)[2])
+        curr_yaw = psis[0]
+        psi_true[0] = curr_yaw
         for i, pose in enumerate(wpts_poses):
             # print(i)
-            wpts[i+1,0] = pose.position.x_val
-            wpts[i+1,1] = pose.position.y_val
-            wpts[i+1,2] = pose.position.z_val
+            wpts[i+1,0] = pose.position.x_val + x_offset
+            wpts[i+1,1] = pose.position.y_val + y_offset
+            wpts[i+1,2] = pose.position.z_val + z_offset
 
-        num_wpts = wpts.shape[0]
+            gate_yaw = quaternion_to_eul(pose.orientation)[2] + np.pi/2
+            psi_true[i+1] = gate_yaw
+            psis[i+1] = regularize_angle(curr_yaw, gate_yaw - np.pi/2) + np.pi/2
+            curr_yaw = psis[i+1]
+
+        num_wpts = (wpts.shape)[0]
         wpts_test = wpts.copy()
-        # z_offset = 20
-        # wpts_test[:,2] -= z_offset
-        # psi_test = np.zeros((num_wpts,))
-        psi_test = np.ones((num_wpts,)) * (quaternion_to_eul(start_orientation)[2])
+        # psi_test = np.ones((num_wpts,)) * (quaternion_to_eul(start_orientation)[2])
+        psi_test = psis.copy()
 
         print('--------------------')
         print('Waypoints')
@@ -176,8 +186,10 @@ class MyRacer(object):
 
         P = [None] * 4
         for i in range(3):
-            P[i] = mstg(degree, minimizer, t_kf, wpts_test[:,i])
-        P[3] = mstg(degree, minimizer, t_kf, psi_test)
+            # P[i] = mstg(degree, minimizer, t_kf, wpts_test[:,i])
+            P[i] = mstgwoopt(degree, minimizer, t_kf, wpts_test[:,i])
+        # P[3] = mstg(degree, minimizer, t_kf, psi_test)
+        P[3] = mstgwoopt(degree, minimizer, t_kf, psi_test)
         traj = np.stack(P,axis = 2)
 
         trajectory = Trajectory(traj, np.cumsum(t_kf))
