@@ -18,7 +18,8 @@ from drone_util import get_drone_state, quaternion_to_eul, regularize_angle
 from models import linear_quad_model, acados_linear_quad_model, \
                     acados_nonlinear_quad_model, \
                     acados_linear_quad_model_moving_eq
-from acados_ocp_problem_form import create_ocp_solver
+from acados_ocp_problem_form import create_ocp_solver, \
+                                    create_ocp_solver_separate_gains
 from acados_template import AcadosOcp, AcadosOcpSolver
 
 class MyRacer(object):
@@ -203,9 +204,19 @@ class MyRacer(object):
         dt = 0.1                    # time step
         n = 9                       # state dimension
         m = 4                       # control input dimension
-        kq = 1                      # parameter to tune the Q matrix Q = kq * I 
-        kq2 = 1
-        kr = 0.1#1 works for linear case                # parameter to tune the R matrix R = kr * I
+        # kq = 1                      # parameter to tune the Q matrix Q = kq * I 
+        # kq2 = 1
+        # kr = 0.1#1 works for linear case                # parameter to tune the R matrix R = kr * I
+
+        kqxy = 1                      # parameter to tune the Q matrix Q = kq * I 
+        kqz = 10
+        kqrp = 0.1#0.01
+        kqy = 1
+        kqxyv = 1
+        kqzv = 1
+        krt = 0.001
+        krrpr = 0.1
+        kryr = 0.1
 
         # rotate_quad = True  # set to true if you want yaw to change between waypoints
         mode = 'nonlinear'
@@ -245,9 +256,15 @@ class MyRacer(object):
                 print('--------------------')
                 model = acados_linear_quad_model(9, g = g)
 
-        ocp_solver = create_ocp_solver(model, Tf, dt, kq, kr, n, m, 
+        # ocp_solver = create_ocp_solver(model, Tf, dt, kq, kr, n, m, 
+        #                     max_abs_roll_rate, max_abs_pitch_rate,
+        #                     max_abs_yaw_rate, init_pos[:n], kq2)
+
+        ocp_solver = create_ocp_solver_separate_gains(model, Tf, dt, n, m, 
                             max_abs_roll_rate, max_abs_pitch_rate,
-                            max_abs_yaw_rate, init_pos[:n], kq2)
+                            max_abs_yaw_rate, init_pos[:n], kqxy, kqz, kqrp, kqy, 
+                            kqxyv, kqzv, krt, krrpr, kryr)
+
         N = int(Tf/dt)
 
         self.airsim_client.moveToPositionAsync(init_pos[0], init_pos[1], init_pos[2], 5).join()
