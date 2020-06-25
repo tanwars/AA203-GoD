@@ -107,3 +107,65 @@ def regularize_angle(ref, ang):
 
     # return ang_conv
     return ang
+
+def insert_wpt(wpt_arr, time_arr, psi_arr, wpt1, wpt2):
+
+    pt_to_add = (wpt_arr[wpt1,:] + wpt_arr[wpt2,:])/2
+    time_to_add = (time_arr[wpt1])/2
+    psi_to_add = (psi_arr[wpt1] + psi_arr[wpt2])/2
+    
+    time_arr[wpt1] = time_to_add
+    time_arr = np.insert(time_arr, wpt2, time_to_add)
+
+    wpt_arr = np.insert(wpt_arr, wpt2, pt_to_add, axis = 0)
+    psi_arr = np.insert(psi_arr, wpt2, psi_to_add, axis = 0)
+    
+    return wpt_arr, time_arr, psi_arr
+
+def shift_wpt(wpt_arr, R, shift_vec, wpt_idx):
+    wpt_arr[wpt_idx,:] += R @ shift_vec
+    return wpt_arr
+
+def remove_wpt(wpt_arr, time_arr, psi_arr, vel_arr, psiv_arr, vel_idx, 
+                                        acc_arr, psia_arr, acc_idx, wpt_idx):
+    wpt_arr = np.delete(wpt_arr, wpt_idx, axis = 0)
+    psi_arr = np.delete(psi_arr, wpt_idx, axis = 0)
+    if wpt_idx == 0:
+        time_from_wpt = time_arr[wpt_idx]
+        time_arr = np.delete(time_arr, wpt_idx)
+    elif wpt_idx == len(time_arr):
+        time_to_wpt = time_arr[wpt_idx - 1]
+        time_arr = np.delete(time_arr, wpt_idx-1)
+    else:
+        time_to_wpt = time_arr[wpt_idx - 1]
+        time_from_wpt = time_arr[wpt_idx]
+        tot_time = time_from_wpt + time_to_wpt
+        time_arr[wpt_idx] = tot_time
+        time_arr = np.delete(time_arr, wpt_idx-1)
+
+    if vel_idx is not None:
+        rem_flag = False
+        for i in range(len(vel_idx)):
+            if vel_idx[i] == wpt_idx:
+                idx_to_remove = i
+                rem_flag = True
+
+        if rem_flag:
+            vel_arr = np.delete(vel_arr, idx_to_remove, axis = 0)
+            psiv_arr = np.delete(psiv_arr, idx_to_remove, axis = 0)
+            vel_idx = np.delete(vel_idx, idx_to_remove)
+    
+    if acc_idx is not None:
+        rem_flag = False
+        for i in range(len(acc_idx)):
+            if acc_idx[i] == wpt_idx:
+                idx_to_remove = i
+                rem_flag = True
+
+        if rem_flag:
+            acc_arr = np.delete(acc_arr, idx_to_remove, axis = 0)
+            psia_arr = np.delete(psia_arr, idx_to_remove, axis = 0)
+            acc_idx = np.delete(acc_idx, idx_to_remove)
+
+    return wpt_arr, time_arr, psi_arr, vel_arr, psiv_arr, vel_idx, acc_arr, \
+                psia_arr, acc_idx  
