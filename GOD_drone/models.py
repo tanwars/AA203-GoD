@@ -1,9 +1,3 @@
-#######################################################
-# Author(s):    Siddharth Tanwar
-# Date:         Spring 2020
-# Description:  AA 173 Homework 8: Discete LQR for quadrotor
-#######################################################
-
 import numpy as np
 
 def linear_quad_model(num_states, g = 9.81):
