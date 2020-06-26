@@ -492,27 +492,3 @@ class Trajectory():
                                 sigma_ret[1](t - self.t_kf[j-1]), 
                                 sigma_ret[2](t - self.t_kf[j-1]),
                                 sigma_ret[3](t - self.t_kf[j-1])])
-
-        # if j == 0:
-        #     if order == 0:
-        #         return np.array([sigma_arr[0](t), 
-        #                         sigma_arr[1](t), 
-        #                         sigma_arr[2](t),
-        #                         sigma_arr[3](t)])
-        #     else:
-        #         return np.array([sigma_ret[0](t), 
-        #                         sigma_ret[1](t), 
-        #                         sigma_ret[2](t),
-        #                         sigma_ret[3](t)])
-        # else:
-        #     if order == 0:
-        #         return np.array([sigma_arr[0](t - self.t_kf[j-1]), 
-        #                         sigma_arr[1](t - self.t_kf[j-1]), 
-        #                         sigma_arr[2](t - self.t_kf[j-1]),
-        #                         sigma_arr[3](t - self.t_kf[j-1])])
-        #     else:
-        #         return np.array([sigma_ret[0](t - self.t_kf[j-1]), 
-        #                         sigma_ret[1](t - self.t_kf[j-1]), 
-        #                         sigma_ret[2](t - self.t_kf[j-1]),
-        #                         sigma_ret[3](t - self.t_kf[j-1])])
-    

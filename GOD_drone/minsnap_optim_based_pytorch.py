@@ -7,24 +7,24 @@ from torch.autograd import Function
 
 class Comp_Mat(Function):
 
-     @staticmethod
-     def forward(ctx, t):
-          A = torch.Tensor([[1, t, t**2, t**3, t**4, t**5, t**6, t**7],
+    @staticmethod
+    def forward(ctx, t):
+        A = torch.Tensor([[1, t, t**2, t**3, t**4, t**5, t**6, t**7],
                         [0, 1, 2*t, 3*(t**2), 4*(t**3), 5*(t**4), 6*(t**5), 7*(t**6)],
                         [0, 0, 2, 6*t, 4*3*(t**2), 5*4*(t**3), 6*5*(t**4), 7*6*(t**5)],
                         [0, 0, 0, 6, 4*3*2*(t), 5*4*3*(t**2), 6*5*4*(t**3), 7*6*5*(t**4)]])
-          #  result = i.exp()
-          A_back = torch.Tensor([[0, 1, 2*t, 3*(t**2), 4*(t**3), 5*(t**4), 6*(t**5), 7*(t**6)],
-                                  [0, 0, 2, 6*t, 4*3*(t**2), 5*4*(t**3), 6*5*(t**4), 7*6*(t**5)],
-                                  [0, 0, 0, 6, 4*3*2*(t), 5*4*3*(t**2), 6*5*4*(t**3), 7*6*5*(t**4)],
-                                  [0, 0, 0, 0, 4*3*2, 5*4*3*2*(t), 6*5*4*3*(t**2), 7*6*5*4*(t**3)]])
-          ctx.save_for_backward(A_back)
-          return A
 
-     @staticmethod
-     def backward(ctx, grad_output):
-         result, = ctx.saved_tensors
-         return grad_output * result
+        A_back = torch.Tensor([[0, 1, 2*t, 3*(t**2), 4*(t**3), 5*(t**4), 6*(t**5), 7*(t**6)],
+                                    [0, 0, 2, 6*t, 4*3*(t**2), 5*4*(t**3), 6*5*(t**4), 7*6*(t**5)],
+                                    [0, 0, 0, 6, 4*3*2*(t), 5*4*3*(t**2), 6*5*4*(t**3), 7*6*5*(t**4)],
+                                    [0, 0, 0, 0, 4*3*2, 5*4*3*2*(t), 6*5*4*3*(t**2), 7*6*5*4*(t**3)]])
+        ctx.save_for_backward(A_back)
+        return A
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        result, = ctx.saved_tensors
+        return grad_output * result
 
 class MinSnapTraj():
 
@@ -84,7 +84,6 @@ class MinSnapTraj():
         AM = torch.zeros((M*N, M*N), dtype=torch.float64)
         
         for m in range(M):
-            # t_end = self.T[m]
 
             if m == 0:
                 AM[:n,:N] = Comp_Mat.apply(0)
@@ -94,16 +93,6 @@ class MinSnapTraj():
                 AM[m*N:m*N+n, m*N: (m+1)*N] = -Comp_Mat.apply(0)
                 AM[m*N+n:m*N+2*n, m*N: (m+1)*N] = Comp_Mat.apply(self.T[m])
 
-            # if m == 0:
-            #     AM[:n,:N] = self.getA_torch(0)
-            #     AM[n:2*n, :N] = self.getA_torch(t_end)
-            #     prev_t_end = t_end
-            # else:
-            #     AM[m*N:m*N+n, (m-1)*N:m*N] = self.getA_torch(prev_t_end)
-            #     AM[m*N:m*N+n, m*N: (m+1)*N] = -self.getA_torch(0)
-            #     AM[m*N+n:m*N+2*n, m*N: (m+1)*N] = self.getA_torch(t_end)
-            
-            # prev_t_end = t_end
         return AM
 
     def compute_C_deriv_dfix(self):
