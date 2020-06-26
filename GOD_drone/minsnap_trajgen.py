@@ -168,18 +168,168 @@ def minSnapTG_without_opt(N, n, T, W, W_vel = None, idx_vel = None,
         P[:,i] = np.flip(p[i*N:(i+1)*N])
     return P
 
+def find_deriv_idx(idx_list, M, N, n, this_num):
+    '''
+    this num: 0,1,2,3
+        0 - position
+        1 - vel
+        2 - acc
+        3 - jerk
+    '''
+    
+    if idx_list is None:
+        return []
+    
+    this_list = []
+
+    for m in idx_list: # m is waypoint number
+        if m == 0:
+            this_list.append(this_num)
+        else:
+            this_list.append(this_num + (m-1)*N + n)
+
+    return this_list
+
+def find_zero_idx(M, N, n):
+    
+    this_list = []
+    
+    for m in range(M):
+        if m == 0:
+            continue
+
+        for idx in range(n):
+            this_list.append(m*N + idx)
+
+    return this_list
+
+def find_unfixed_deriv(fixed_deriv, M, N):
+
+    arr1 = np.array(fixed_deriv)
+    arr2 = np.arange(N * M)
+
+    this_list = list(np.setdiff1d(arr2, arr1, assume_unique=True))
+    return this_list
+
+def minSnapTG_without_opt_new(N, n, T, W = None, idx_pos = None, 
+                                        W_vel = None, idx_vel = None, 
+                                        W_acc = None, idx_acc = None,
+                                        W_jer = None, idx_jer = None):
+    '''
+    only works for snap
+    '''
+
+    M = len(T)
+    
+    # For each segment, compute Q and A
+    Q = np.zeros((M, N, N), dtype=np.float64)
+    AM = np.zeros((M*N, M*N), dtype=np.float64)
+    for m in range(M):
+        # Minimizing derivative Hessian matrix Q
+        for i in range(n, N+1):
+            for j in range(n, N+1):
+                k = np.arange(0, n, dtype=np.float64)
+                Q[m,i-1,j-1] = 2 * np.prod((i-k)*(j-k)) * T[m]**(i+j+1-2*n) / (i+j+1-2*n)
+        
+        t_end = T[m]
+
+        if m == 0:
+            AM[:n,:N] = getA(0)
+            AM[n:2*n, :N] = getA(t_end)
+            prev_t_end = t_end
+        else:
+            AM[m*N:m*N+n, (m-1)*N:m*N] = getA(prev_t_end)
+            AM[m*N:m*N+n, m*N: (m+1)*N] = -getA(0)
+            AM[m*N+n:m*N+2*n, m*N: (m+1)*N] = getA(t_end)
+        
+        prev_t_end = t_end
+
+    # Assemble block diagonal matrices Q1...M, A1...M
+    QM = block_diag(*Q)
+
+    # find idx of fixed and non-fixed derivatives
+    fixed_deriv = []
+
+    pos_fixed_idx = find_deriv_idx(idx_pos, M, N, n, 0)
+    vel_fixed_idx = find_deriv_idx(idx_vel, M, N, n, 1)
+    acc_fixed_idx = find_deriv_idx(idx_acc, M, N, n, 2)
+    jer_fixed_idx = find_deriv_idx(idx_jer, M, N, n, 3)
+    fixed_deriv.append(pos_fixed_idx)
+    fixed_deriv.append(vel_fixed_idx)
+    fixed_deriv.append(acc_fixed_idx)
+    fixed_deriv.append(jer_fixed_idx)
+
+    fixed_deriv.append(find_zero_idx(M, N, n))
+
+    fixed_deriv = [item for sublist in fixed_deriv for item in sublist]
+    
+    unfixed_deriv = find_unfixed_deriv(fixed_deriv, M, N)
+
+    # print(fixed_deriv)
+    # print(unfixed_deriv)
+
+    # construct the C matrix
+    C = np.zeros((M*N, M*N))
+    nf = len(fixed_deriv)
+    nuf = len(unfixed_deriv)
+
+    for i in range(nf):
+        C[i, fixed_deriv[i]] = 1
+    for i in range(nuf):
+        C[i+nf, unfixed_deriv[i]] = 1
+
+    # construct d
+    d = np.zeros((M*N,))
+
+    d[pos_fixed_idx] = W
+    d[vel_fixed_idx] = W_vel
+    d[acc_fixed_idx] = W_acc
+    d[jer_fixed_idx] = W_jer
+
+    # print(d)
+
+    # Minimization
+    H = C @ np.linalg.inv(AM).T @ QM @ np.linalg.inv(AM) @ C.T
+
+    Rff = H[:nf, :nf]
+    Rfp = H[:nf, nf:]
+    Rpf = H[nf:, :nf]
+    Rpp = H[nf:, nf:]
+
+    d_star_p = - np.linalg.inv(Rpp) @ Rfp.T @ C[:nf,:] @ d
+    d_star = np.hstack((C[:nf,:] @ d, d_star_p))
+
+    d = C.T @ d_star
+
+    p = np.linalg.solve(AM, d)
+
+    print('Cost NonCVX: %f'% (p.T @ QM @ p))
+
+    P = np.zeros((N, M))
+    for i in range(M):
+        P[:,i] = np.flip(p[i*N:(i+1)*N])
+    return P
+
 # N = 8
 # n = 4
-# T = np.array([1, 1, 1], dtype=np.float64)
+# T = np.array([5, 5, 5], dtype=np.float64)
 # W = np.array([0, 1, 2, 5], dtype=np.float64)
+# V = np.array([], dtype=np.float64)
+
+# vel_idx = np.array([])
+# pos_idx = np.array([0,1,2,3])
 
 # # P1 = minSnapTG(N, n, T, W)
 # # print(P1)
 # # plot_utils.plot_single_traj(P1, T, 0.1)
 
-# P2 = minSnapTG_without_opt(N, n, T, W)
-# print(P2)
-# plot_utils.plot_single_traj(P2, T, 0.1)
+# # P2 = minSnapTG_without_opt(N, n, T, W)
+# # print(P2)
+# # plot_utils.plot_single_traj(P2, T, 0.1)
 
+# P3 = minSnapTG_without_opt_new(N, n, T, W = W, idx_pos= pos_idx, W_vel = V, 
+#                                                             idx_vel = vel_idx)
+# # print(P2)
+# plot_utils.plot_single_traj(P3, T, 0.1)
 
 # plt.show()
