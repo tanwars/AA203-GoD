@@ -106,6 +106,7 @@ class MyRacer(object):
     def takeoff_with_moveOnSpline(self, takeoff_height = 1.0):
         start_position = self.airsim_client.simGetVehiclePose(vehicle_name=self.drone_name).position
         takeoff_waypoint = airsim.Vector3r(start_position.x_val, start_position.y_val, start_position.z_val-takeoff_height)
+        # takeoff_waypoint = self.gate_poses_ground_truth[0].position
 
         self.airsim_client.moveOnSplineAsync([takeoff_waypoint], vel_max=15.0, acc_max=5.0, add_position_constraint=True, add_velocity_constraint=False, 
             add_acceleration_constraint=False, viz_traj=self.viz_traj, viz_traj_color_rgba=self.viz_traj_color_rgba, vehicle_name=self.drone_name).join()
@@ -155,11 +156,11 @@ class MyRacer(object):
         degree = 2 * minimizer
         time_dilation = 3.5
 
-        total_time = 100  # final tier 1
-        scaler = 0.7 # final tier 1
+        # total_time = 100  # final tier 1
+        # scaler = 0.7 # final tier 1
 
-        # total_time = 25  # qualifier tier 1
-        # scaler = 0.7 # qualifier tier 1
+        total_time = 25  # qualifier tier 1
+        scaler = 0.7 # qualifier tier 1
 
         # total_time = 5 # soccer_field_easy  
         # scaler = 0.7  # soccer_field_easy
@@ -243,35 +244,35 @@ class MyRacer(object):
         t_kf = dist_bw_gates * total_time
         t_kf = np.maximum(t_kf, scaler*np.ones(t_kf.shape))
         
-        t_kf[0] = 3.0
-        # wpts_test, t_kf, psi_test = remove_wpt(wpts_test, t_kf, psi_test, 21)
-        wpts_test, t_kf, psi_test, wpts_vel, psi_vel, wpts_vel_idx, wpts_acc, psi_acc, wpts_acc_idx = remove_wpt(
-                            wpts_test, t_kf, psi_test, 
-                            wpts_vel, psi_vel, wpts_vel_idx, 
-                            wpts_acc, psi_acc, wpts_acc_idx,
-                            21)
+        # t_kf[0] = 3.0
+        # # wpts_test, t_kf, psi_test = remove_wpt(wpts_test, t_kf, psi_test, 21)
+        # wpts_test, t_kf, psi_test, wpts_vel, psi_vel, wpts_vel_idx, wpts_acc, psi_acc, wpts_acc_idx = remove_wpt(
+        #                     wpts_test, t_kf, psi_test, 
+        #                     wpts_vel, psi_vel, wpts_vel_idx, 
+        #                     wpts_acc, psi_acc, wpts_acc_idx,
+        #                     21)
 
         # wpts_test = shift_wpt(wpts_test,  rot_mat_wpts[4,:,:], np.array([0,3,0]), 4)
         # wpts_test = shift_wpt(wpts_test,  rot_mat_wpts[5,:,:], np.array([0,3,0]), 5)
         # wpts_test = shift_wpt(wpts_test,  rot_mat_wpts[6,:,:], np.array([0,3,0]), 6)
 
-        ### 
-        # # qualifier tier 1
-        # t_kf[0] = 1.5
-        # t_kf[12] = 3.5
-        # wpts_test = shift_wpt(wpts_test,  rot_mat_wpts[13,:,:], np.array([0,0,-1]), 13)
-        # wpts_test = shift_wpt(wpts_test,  rot_mat_wpts[1,:,:], np.array([0,0,-1]), 1)
-        # wpts_test = shift_wpt(wpts_test,  rot_mat_wpts[2,:,:], np.array([0,0,-1]), 2)
-        # wpts_test = shift_wpt(wpts_test,  rot_mat_wpts[3,:,:], np.array([0,0,-1]), 3)
-        # wpts_test = shift_wpt(wpts_test,  rot_mat_wpts[4,:,:], np.array([0,0,-1]), 4)
-        # wpts_test = shift_wpt(wpts_test,  rot_mat_wpts[5,:,:], np.array([0,0,-1]), 5)
-        # wpts_test = shift_wpt(wpts_test,  rot_mat_wpts[6,:,:], np.array([1,0,-1]), 6)
-        # wpts_test = shift_wpt(wpts_test,  rot_mat_wpts[7,:,:], np.array([0,0,-1]), 7)
-        # wpts_test = shift_wpt(wpts_test,  rot_mat_wpts[8,:,:], np.array([0,0,-1]), 8)
-        # wpts_test = shift_wpt(wpts_test,  rot_mat_wpts[9,:,:], np.array([0,0,-1]), 9)
-        # wpts_test = shift_wpt(wpts_test,  rot_mat_wpts[14,:,:], np.array([0,0,-1]), 14)
-        # wpts_test = shift_wpt(wpts_test,  rot_mat_wpts[15,:,:], np.array([0,0,-1]), 15)
-        # wpts_test = shift_wpt(wpts_test,  rot_mat_wpts[16,:,:], np.array([0,0,-1]), 16)
+        ## 
+        # qualifier tier 1
+        t_kf[0] = 1.5
+        t_kf[12] = 3.5
+        wpts_test = shift_wpt(wpts_test,  rot_mat_wpts[13,:,:], np.array([0,0,-1]), 13)
+        wpts_test = shift_wpt(wpts_test,  rot_mat_wpts[1,:,:], np.array([1,0,-1]), 1)
+        wpts_test = shift_wpt(wpts_test,  rot_mat_wpts[2,:,:], np.array([0,0,-1]), 2)
+        wpts_test = shift_wpt(wpts_test,  rot_mat_wpts[3,:,:], np.array([0,0,-1]), 3)
+        wpts_test = shift_wpt(wpts_test,  rot_mat_wpts[4,:,:], np.array([0,0,-1]), 4)
+        wpts_test = shift_wpt(wpts_test,  rot_mat_wpts[5,:,:], np.array([0,0,-1]), 5)
+        wpts_test = shift_wpt(wpts_test,  rot_mat_wpts[6,:,:], np.array([1,0,-1]), 6)
+        wpts_test = shift_wpt(wpts_test,  rot_mat_wpts[7,:,:], np.array([0,0,-1]), 7)
+        wpts_test = shift_wpt(wpts_test,  rot_mat_wpts[8,:,:], np.array([0,0,-1]), 8)
+        wpts_test = shift_wpt(wpts_test,  rot_mat_wpts[9,:,:], np.array([0,0,-1]), 9)
+        wpts_test = shift_wpt(wpts_test,  rot_mat_wpts[14,:,:], np.array([0,0,-1]), 14)
+        wpts_test = shift_wpt(wpts_test,  rot_mat_wpts[15,:,:], np.array([0,0,-1]), 15)
+        wpts_test = shift_wpt(wpts_test,  rot_mat_wpts[16,:,:], np.array([0,0,-1]), 16)
 
         ## 
         # for soccer field medium
@@ -619,9 +620,11 @@ def main(args):
         args.race_tier = 3
     racer.start_race(args.race_tier)
     racer.initialize_drone()
-    racer.takeoff_with_moveOnSpline(1.0)
-    # racer.takeoff_with_moveOnSpline(2.0)
     racer.get_ground_truth_gate_poses()
+    
+    # racer.takeoff_with_moveOnSpline(1.0)
+    # racer.takeoff_with_moveOnSpline(2.0)
+    
     # racer.start_image_callback_thread()
     racer.start_odometry_callback_thread()
     racer.start_plot_callback_thread()
